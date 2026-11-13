@@ -4,9 +4,235 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>9分割オンライン野球対戦ゲーム</title>
-    <!-- Firebase SDKの読み込み -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Firebase SDK (v9 Modular) の読み込み -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+        import { getDatabase, ref, set, get, update, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyCsCifItA84WPN4wMjXvOwvYhBjB",
+          authDomain: "baseball-online.firebaseapp.com",
+          databaseURL: "https://baseball-online-default-rtdb.firebaseio.com",
+          projectId: "baseball-online",
+          storageBucket: "baseball-online.appspot.com",
+          messagingSenderId: "947654419932",
+          appId: "1:947654419932:web:a2eb55d895cee05",
+          measurementId: "G-2LCLBVP9HC"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let roomId = null;
+        let myRole = null;
+        let selectedPitchZone = 5;
+        let selectedPitchTypeVal = 'ストレート';
+        let selectedBatZone = 5;
+
+        window.showScreen = function(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        window.createRoom = function() {
+            const btn = document.getElementById('create-btn');
+            btn.innerText = "作成中...";
+            btn.disabled = true;
+
+            try {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                let id = '';
+                for(let i = 0; i < 6; i++) {
+                    id += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                roomId = id;
+                myRole = 'p1';
+                
+                const roomData = {
+                    status: 'waiting',
+                    p1Connected: true,
+                    p2Connected: false,
+                    pitchZone: null,
+                    pitchType: null,
+                    batZone: null,
+                    batterReady: false,
+                    pitcherReady: false,
+                    score1: 0,
+                    score2: 0,
+                    inning: 1,
+                    topBot: '表',
+                    message: '対戦相手を待っています'
+                };
+
+                set(ref(db, 'rooms/' + roomId), roomData).then(() => {
+                    document.getElementById('display-room-id').innerText = roomId;
+                    showScreen('wait-screen');
+                    listenRoom();
+                }).catch(error => {
+                    alert('Firebase書き込みエラー: ' + error.message);
+                    btn.innerText = "ルームを作成する";
+                    btn.disabled = false;
+                });
+            } catch (err) {
+                alert('JavaScriptエラー: ' + err.message);
+                btn.innerText = "ルームを作成する";
+                btn.disabled = false;
+            }
+        }
+
+        window.joinRoom = function() {
+            try {
+                const inputId = document.getElementById('room-id-input').value.trim().toUpperCase();
+                if (!inputId) {
+                    alert('ルームIDを入力してください');
+                    return;
+                }
+                roomId = inputId;
+                myRole = 'p2';
+
+                get(ref(db, 'rooms/' + roomId)).then(snapshot => {
+                    const data = snapshot.val();
+                    if (!data) {
+                        alert('ルームが見つかりません');
+                        return;
+                    }
+                    update(ref(db, 'rooms/' + roomId), {
+                        p2Connected: true,
+                        status: 'playing',
+                        message: 'ゲーム開始！配球を選んでください'
+                    }).then(() => {
+                        showScreen('game-screen');
+                        initGrids();
+                        listenRoom();
+                    });
+                }).catch(error => {
+                    alert('参加エラー: ' + error.message);
+                });
+            } catch (err) {
+                alert('参加時JavaScriptエラー: ' + err.message);
+            }
+        }
+
+        function listenRoom() {
+            onValue(ref(db, 'rooms/' + roomId), snapshot => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                if (data.status === 'playing' && document.getElementById('wait-screen').classList.contains('active')) {
+                    showScreen('game-screen');
+                    initGrids();
+                }
+
+                updateUI(data);
+            });
+        }
+
+        window.initGrids = function() {
+            const pGrid = document.getElementById('pitcher-grid');
+            const bGrid = document.getElementById('batter-grid');
+            pGrid.innerHTML = '';
+            bGrid.innerHTML = '';
+
+            for (let i = 1; i <= 9; i++) {
+                const pCell = document.createElement('div');
+                pCell.className = `zone-cell ${i === selectedPitchZone ? 'selected' : ''}`;
+                pCell.innerText = i;
+                pCell.onclick = () => {
+                    selectedPitchZone = i;
+                    document.querySelectorAll('#pitcher-grid .zone-cell').forEach(c => c.classList.remove('selected'));
+                    pCell.classList.add('selected');
+                };
+                pGrid.appendChild(pCell);
+
+                const bCell = document.createElement('div');
+                bCell.className = `zone-cell ${i === selectedBatZone ? 'selected' : ''}`;
+                bCell.innerText = i;
+                bCell.onclick = () => {
+                    selectedBatZone = i;
+                    document.querySelectorAll('#batter-grid .zone-cell').forEach(c => c.classList.remove('selected'));
+                    bCell.classList.add('selected');
+                };
+                bGrid.appendChild(bCell);
+            }
+        }
+
+        window.selectPitchType = function(type) {
+            selectedPitchTypeVal = type;
+            document.querySelectorAll('.pitch-btn').forEach(btn => {
+                btn.classList.toggle('selected', btn.innerText === type);
+            });
+        }
+
+        function updateUI(data) {
+            const isP1Pitcher = (data.topBot === '表');
+            const amIPitcher = (myRole === 'p1' && isP1Pitcher) || (myRole === 'p2' && !isP1Pitcher);
+
+            document.getElementById('role-display').innerText = amIPitcher ? '役割: ピッチャー' : '役割: バッター';
+            document.getElementById('inning-display').innerText = `${data.inning}${data.topBot}`;
+            document.getElementById('score-display').innerText = `${data.score1} - ${data.score2}`;
+            document.getElementById('game-message').innerText = data.message || '';
+
+            if (amIPitcher) {
+                document.getElementById('pitcher-panel').style.display = 'block';
+                document.getElementById('batter-panel').style.display = 'none';
+            } else {
+                document.getElementById('pitcher-panel').style.display = 'none';
+                document.getElementById('batter-panel').style.display = 'block';
+            }
+        }
+
+        window.confirmPitch = function() {
+            update(ref(db, 'rooms/' + roomId), {
+                pitchZone: selectedPitchZone,
+                pitchType: selectedPitchTypeVal,
+                pitcherReady: true,
+                message: 'ピッチャー投球完了。バッターの予測を待っています...'
+            });
+        }
+
+        window.confirmBat = function() {
+            get(ref(db, 'rooms/' + roomId)).then(snapshot => {
+                const data = snapshot.val();
+                if (!data.pitcherReady) {
+                    alert('ピッチャーがまだ投球していません！');
+                    return;
+                }
+
+                const pZone = data.pitchZone;
+                const bZone = selectedBatZone;
+                let resultMsg = '';
+                let s1 = data.score1;
+                let s2 = data.score2;
+
+                if (pZone === bZone) {
+                    resultMsg = '💥 ズバリ的中！ホームラン！！';
+                    if (data.topBot === '表') s2 += 1; else s1 += 1;
+                } else if (Math.abs(pZone - bZone) === 1 || Math.abs(pZone - bZone) === 3) {
+                    resultMsg = 'ヒット！ナイスバッティング！';
+                } else {
+                    resultMsg = '空振り三振！打ち取り！';
+                }
+
+                let nextInning = data.inning;
+                let nextTopBot = (data.topBot === '表') ? '裏' : '表';
+                if (nextTopBot === '表') {
+                    nextInning += 1;
+                }
+
+                update(ref(db, 'rooms/' + roomId), {
+                    batZone: bZone,
+                    batterReady: true,
+                    message: resultMsg,
+                    score1: s1,
+                    score2: s2,
+                    inning: nextInning,
+                    topBot: nextTopBot,
+                    pitcherReady: false,
+                    batterReady: false
+                });
+            });
+        }
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background: #111; color: #fff; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 15px; }
@@ -70,7 +296,7 @@
             <div class="home-plate"></div>
         </div>
 
-        <div class="message-overlay" id="game-message">ゲーム開始！</div>
+        .message-overlay" id="game-message">ゲーム開始！</div>
 
         <!-- ピッチャー操作パネル -->
         <div id="pitcher-panel" style="display:none;">
@@ -93,236 +319,5 @@
         </div>
     </div>
 </div>
-
-<script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyCsCifItA84WPN4wMjXvOwvYhBjB",
-      authDomain: "baseball-online.firebaseapp.com",
-      databaseURL: "https://baseball-online-default-rtdb.firebaseio.com",
-      projectId: "baseball-online",
-      storageBucket: "baseball-online.appspot.com",
-      messagingSenderId: "947654419932",
-      appId: "1:947654419932:web:a2eb55d895cee05",
-      measurementId: "G-2LCLBVP9HC"
-    };
-
-    try {
-        firebase.initializeApp(firebaseConfig);
-    } catch (e) {
-        alert("Firebase初期化エラー: " + e.message);
-    }
-    
-    const db = firebase.database();
-
-    let roomId = null;
-    let myRole = null;
-    let selectedPitchZone = 5;
-    let selectedPitchTypeVal = 'ストレート';
-    let selectedBatZone = 5;
-
-    function showScreen(screenId) {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById(screenId).classList.add('active');
-    }
-
-    function createRoom() {
-        const btn = document.getElementById('create-btn');
-        btn.innerText = "作成中...";
-        btn.disabled = true;
-
-        try {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let id = '';
-            for(let i = 0; i < 6; i++) {
-                id += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            roomId = id;
-            myRole = 'p1';
-            
-            const roomData = {
-                status: 'waiting',
-                p1Connected: true,
-                p2Connected: false,
-                pitchZone: null,
-                pitchType: null,
-                batZone: null,
-                batterReady: false,
-                pitcherReady: false,
-                score1: 0,
-                score2: 0,
-                inning: 1,
-                topBot: '表',
-                message: '対戦相手を待っています'
-            };
-
-            db.ref('rooms/' + roomId).set(roomData).then(() => {
-                document.getElementById('display-room-id').innerText = roomId;
-                showScreen('wait-screen');
-                listenRoom();
-            }).catch(error => {
-                alert('Firebase書き込みエラー: ' + error.message);
-                btn.innerText = "ルームを作成する";
-                btn.disabled = false;
-            });
-        } catch (err) {
-            alert('JavaScriptエラー: ' + err.message);
-            btn.innerText = "ルームを作成する";
-            btn.disabled = false;
-        }
-    }
-
-    function joinRoom() {
-        try {
-            const inputId = document.getElementById('room-id-input').value.trim().toUpperCase();
-            if (!inputId) {
-                alert('ルームIDを入力してください');
-                return;
-            }
-            roomId = inputId;
-            myRole = 'p2';
-
-            db.ref('rooms/' + roomId).once('value', snapshot => {
-                const data = snapshot.val();
-                if (!data) {
-                    alert('ルームが見つかりません');
-                    return;
-                }
-                db.ref('rooms/' + roomId).update({
-                    p2Connected: true,
-                    status: 'playing',
-                    message: 'ゲーム開始！配球を選んでください'
-                }).then(() => {
-                    showScreen('game-screen');
-                    initGrids();
-                    listenRoom();
-                });
-            }).catch(error => {
-                alert('参加エラー: ' + error.message);
-            });
-        } catch (err) {
-            alert('参加時JavaScriptエラー: ' + err.message);
-        }
-    }
-
-    function listenRoom() {
-        db.ref('rooms/' + roomId).on('value', snapshot => {
-            const data = snapshot.val();
-            if (!data) return;
-
-            if (data.status === 'playing' && document.getElementById('wait-screen').classList.contains('active')) {
-                showScreen('game-screen');
-                initGrids();
-            }
-
-            updateUI(data);
-        });
-    }
-
-    function initGrids() {
-        const pGrid = document.getElementById('pitcher-grid');
-        const bGrid = document.getElementById('batter-grid');
-        pGrid.innerHTML = '';
-        bGrid.innerHTML = '';
-
-        for (let i = 1; i <= 9; i++) {
-            const pCell = document.createElement('div');
-            pCell.className = `zone-cell ${i === selectedPitchZone ? 'selected' : ''}`;
-            pCell.innerText = i;
-            pCell.onclick = () => {
-                selectedPitchZone = i;
-                document.querySelectorAll('#pitcher-grid .zone-cell').forEach(c => c.classList.remove('selected'));
-                pCell.classList.add('selected');
-            };
-            pGrid.appendChild(pCell);
-
-            const bCell = document.createElement('div');
-            bCell.className = `zone-cell ${i === selectedBatZone ? 'selected' : ''}`;
-            bCell.innerText = i;
-            bCell.onclick = () => {
-                selectedBatZone = i;
-                document.querySelectorAll('#batter-grid .zone-cell').forEach(c => c.classList.remove('selected'));
-                bCell.classList.add('selected');
-            };
-            bGrid.appendChild(bCell);
-        }
-    }
-
-    function selectPitchType(type) {
-        selectedPitchTypeVal = type;
-        document.querySelectorAll('.pitch-btn').forEach(btn => {
-            btn.classList.toggle('selected', btn.innerText === type);
-        });
-    }
-
-    function updateUI(data) {
-        const isP1Pitcher = (data.topBot === '表');
-        const amIPitcher = (myRole === 'p1' && isP1Pitcher) || (myRole === 'p2' && !isP1Pitcher);
-
-        document.getElementById('role-display').innerText = amIPitcher ? '役割: ピッチャー' : '役割: バッター';
-        document.getElementById('inning-display').innerText = `${data.inning}${data.topBot}`;
-        document.getElementById('score-display').innerText = `${data.score1} - ${data.score2}`;
-        document.getElementById('game-message').innerText = data.message || '';
-
-        if (amIPitcher) {
-            document.getElementById('pitcher-panel').style.display = 'block';
-            document.getElementById('batter-panel').style.display = 'none';
-        } else {
-            document.getElementById('pitcher-panel').style.display = 'none';
-            document.getElementById('batter-panel').style.display = 'block';
-        }
-    }
-
-    function confirmPitch() {
-        db.ref('rooms/' + roomId).update({
-            pitchZone: selectedPitchZone,
-            pitchType: selectedPitchTypeVal,
-            pitcherReady: true,
-            message: 'ピッチャー投球完了。バッターの予測を待っています...'
-        });
-    }
-
-    function confirmBat() {
-        db.ref('rooms/' + roomId).once('value', snapshot => {
-            const data = snapshot.val();
-            if (!data.pitcherReady) {
-                alert('ピッチャーがまだ投球していません！');
-                return;
-            }
-
-            const pZone = data.pitchZone;
-            const bZone = selectedBatZone;
-            let resultMsg = '';
-            let s1 = data.score1;
-            let s2 = data.score2;
-
-            if (pZone === bZone) {
-                resultMsg = '💥 ズバリ的中！ホームラン！！';
-                if (data.topBot === '表') s2 += 1; else s1 += 1;
-            } else if (Math.abs(pZone - bZone) === 1 || Math.abs(pZone - bZone) === 3) {
-                resultMsg = 'ヒット！ナイスバッティング！';
-            } else {
-                resultMsg = '空振り三振！打ち取り！';
-            }
-
-            let nextInning = data.inning;
-            let nextTopBot = (data.topBot === '表') ? '裏' : '表';
-            if (nextTopBot === '表') {
-                nextInning += 1;
-            }
-
-            db.ref('rooms/' + roomId).update({
-                batZone: bZone,
-                batterReady: true,
-                message: resultMsg,
-                score1: s1,
-                score2: s2,
-                inning: nextInning,
-                topBot: nextTopBot,
-                pitcherReady: false,
-                batterReady: false
-            });
-        });
-    }
-</script>
 </body>
 </html>
