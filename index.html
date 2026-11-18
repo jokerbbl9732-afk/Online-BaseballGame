@@ -221,8 +221,8 @@
                     resultMsg = '空振り三振！打ち取り！';
                 }
 
-                // 1. サヨナラ勝ち判定（裏の攻撃で後攻(s2)が先攻(s1)を上回った場合）
-                if (!isTop && s2 > s1) {
+                // サヨナラ勝ち判定：9回以降かつ裏の攻撃で後攻(s2)が先攻(s1)を上回った場合のみ
+                if (!isTop && data.inning >= 9 && s2 > s1) {
                     resultMsg += ' 🏆 試合終了！後攻チームのサヨナラ勝ち！';
                     update(ref(db, 'rooms/' + roomId), {
                         batZone: bZone,
@@ -244,8 +244,7 @@
                     nextInning += 1;
                 }
 
-                // 2. 9回以降で、裏の攻撃が終了した時点で先攻がリードしている場合の試合終了判定（先攻の勝利）
-                // （「裏」の攻撃が終わって、次のイニングが「表」になろうとするタイミングでスコアを比較）
+                // 9回以降で、裏の攻撃が終了した時点で先攻がリードしている場合の試合終了判定（先攻の勝利）
                 if (isTop && nextTopBot === '表' && data.inning >= 9 && s1 > s2) {
                     resultMsg += ` 🏆 試合終了！先攻チームの勝利！ (${s1}対${s2})`;
                     update(ref(db, 'rooms/' + roomId), {
@@ -295,7 +294,7 @@
         .pitch-type-container { display: flex; gap: 5px; justify-content: center; margin: 10px 0; }
         .pitch-btn { flex: 1; padding: 8px 4px; font-size: 0.75rem; background: #444; border: none; border-radius: 4px; color: white; cursor: pointer; }
         .pitch-btn.selected { background: #f39c12; color: #000; font-weight: bold; }
-        .field { position: relative; width: 100%; height: 180px; background: radial-gradient(circle at center, #27ae60 30%, #1e8449 100%); border-radius: 8px; overflow: hidden; margin0bottom: 10px; border: 2px solid #2ecc71; }
+        .field { position: relative; width: 100%; height: 180px; background: radial-gradient(circle at center, #27ae60 30%, #1e8449 100%); border-radius: 8px; overflow: hidden; margin-bottom: 10px; border: 2px solid #2ecc71; }
         .home-plate { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); width: 30px; height: 20px; background: #fff; clip-path: polygon(50% 0%, 100% 30%, 100% 100%, 0% 100%, 0% 30%); }
         .ball { position: absolute; width: 14px; height: 14px; background: #fff; border-radius: 50%; box-shadow: 0 0 8px #fff; display: none; }
         .message-overlay { text-align: center; font-size: 1.3rem; font-weight: bold; color: #f1c40f; margin: 10px 0; min-height: 35px; }
