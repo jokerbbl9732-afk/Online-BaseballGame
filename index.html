@@ -12,7 +12,7 @@
         const firebaseConfig = {
           apiKey: "AIzaSyCsCifItA84WPN4wMjXvOwvYhBjB",
           authDomain: "baseball-online.firebaseapp.com",
-          databaseURL: "https://baseball-online-default-rtdb.firebaseio.com",
+          databaseURL: "https://baseball-online-default-rtdb.asia-southeast1.firebasedatabase.app",
           projectId: "baseball-online",
           storageBucket: "baseball-online.appspot.com",
           messagingSenderId: "947654419932",
@@ -172,6 +172,12 @@
             document.getElementById('score-display').innerText = `${data.score1} - ${data.score2}`;
             document.getElementById('game-message').innerText = data.message || '';
 
+            if (data.status === 'finished') {
+                document.getElementById('pitcher-panel').style.display = 'none';
+                document.getElementById('batter-panel').style.display = 'none';
+                return;
+            }
+
             if (amIPitcher) {
                 document.getElementById('pitcher-panel').style.display = 'block';
                 document.getElementById('batter-panel').style.display = 'none';
@@ -209,16 +215,35 @@
                     if (data.topBot === '表') s2 += 1; else s1 += 1;
                 } else if (Math.abs(pZone - bZone) === 1 || Math.abs(pZone - bZone) === 3) {
                     resultMsg = 'ヒット！ナイスバッティング！';
+                    if (data.topBot === '表') s2 += 1; else s1 += 1; // ヒットでも1点入るルールに準拠
                 } else {
                     resultMsg = '空振り三振！打ち取り！';
                 }
 
+                // サヨナラ判定（裏の攻撃で後攻チーム（p2側 = score2）がリードした瞬間）
+                if (data.topBot === '裏' && s2 > s1) {
+                    resultMsg += ' 🏆 試合終了！後攻チームのサヨナラ勝ち！';
+                    update(ref(db, 'rooms/' + roomId), {
+                        batZone: bZone,
+                        batterReady: true,
+                        message: resultMsg,
+                        score1: s1,
+                        score2: s2,
+                        status: 'finished',
+                        pitcherReady: false,
+                        batterReady: false
+                    });
+                    return;
+                }
+
+                // 通常のイニング進行
                 let nextInning = data.inning;
                 let nextTopBot = (data.topBot === '表') ? '裏' : '表';
                 if (nextTopBot === '表') {
                     nextInning += 1;
                 }
 
+                // 9回裏以降で、9回裏が終わった時点で同点の場合は延長戦へ（そのまま進む）
                 update(ref(db, 'rooms/' + roomId), {
                     batZone: bZone,
                     batterReady: true,
@@ -296,7 +321,7 @@
             <div class="home-plate"></div>
         </div>
 
-        .message-overlay" id="game-message">ゲーム開始！</div>
+        <div class="message-overlay" id="game-message">ゲーム開始！</div>
 
         <!-- ピッチャー操作パネル -->
         <div id="pitcher-panel" style="display:none;">
