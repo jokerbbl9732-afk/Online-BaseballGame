@@ -217,11 +217,12 @@
                     if (isTop) { s1 += 1; } else { s2 += 1; }
                 } else if (Math.abs(pZone - bZone) === 1 || Math.abs(pZone - bZone) === 3) {
                     resultMsg = 'ヒット！惜しい！';
+                    if (!isTop && pZone === bZone) { /* ヒットは得点なしに維持 */ }
                 } else {
                     resultMsg = '空振り三振！打ち取り！';
                 }
 
-                // サヨナラ勝ち判定：9回以降かつ裏の攻撃で後攻(s2)が先攻(s1)を上回った場合のみ
+                // 1. サヨナラ勝ち判定（裏の攻撃で後攻(s2)が先攻(s1)を上回った瞬間）
                 if (!isTop && data.inning >= 9 && s2 > s1) {
                     resultMsg += ' 🏆 試合終了！後攻チームのサヨナラ勝ち！';
                     update(ref(db, 'rooms/' + roomId), {
@@ -244,8 +245,10 @@
                     nextInning += 1;
                 }
 
-                // 9回以降で、裏の攻撃が終了した時点で先攻がリードしている場合の試合終了判定（先攻の勝利）
-                if (isTop && nextTopBot === '表' && data.inning >= 9 && s1 > s2) {
+                // 2. 先攻チームの勝ち判定：
+                // ① 9回表が終わって先攻がリードしており、その裏（9回裏）が無得点で終わった場合
+                // ② または延長の裏の攻撃が終了した時点で、先攻のスコアが勝っている場合
+                if (!isTop && data.inning >= 9 && s1 > s2) {
                     resultMsg += ` 🏆 試合終了！先攻チームの勝利！ (${s1}対${s2})`;
                     update(ref(db, 'rooms/' + roomId), {
                         batZone: bZone,
@@ -258,6 +261,11 @@
                         batterReady: false
                     });
                     return;
+                }
+
+                // ③ 9回表が終わった時点で先攻がリードしている場合（裏が始まる前）
+                if (isTop && nextTopBot === '裏' && data.inning >= 9 && s1 > s2) {
+                    // ※ただし裏の攻撃が残っているのでここではまだ終了せず、裏の攻撃へ進む
                 }
 
                 update(ref(db, 'rooms/' + roomId), {
@@ -354,7 +362,7 @@
 
         <!-- バッター操作パネル -->
         <div id="batter-panel" style="display:none;">
-            <div class="status-box">【バッター】来るコースを予測して選択！</div>
+            <div class="status-box">【_バッター】来るコースを予測して選択！</div>
             <div class="zone-grid" id="batter-grid"></div>
             <button class="btn" onclick="confirmBat()">スイング！</button>
         </div>
