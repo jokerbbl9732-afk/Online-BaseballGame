@@ -210,18 +210,21 @@
                 let s1 = data.score1;
                 let s2 = data.score2;
 
+                // 得点計算（表はp2が守り/p1が得点、裏はp1が守り/p2が得点）
+                const isTop = (data.topBot === '表');
+
                 if (pZone === bZone) {
                     resultMsg = '💥 ズバリ的中！ホームラン！！';
-                    if (data.topBot === '表') s2 += 1; else s1 += 1;
+                    if (isTop) { s1 += 1; } else { s2 += 1; }
                 } else if (Math.abs(pZone - bZone) === 1 || Math.abs(pZone - bZone) === 3) {
                     resultMsg = 'ヒット！ナイスバッティング！';
-                    if (data.topBot === '表') s2 += 1; else s1 += 1; // ヒットでも1点入るルールに準拠
+                    if (isTop) { s1 += 1; } else { s2 += 1; }
                 } else {
                     resultMsg = '空振り三振！打ち取り！';
                 }
 
-                // サヨナラ判定（裏の攻撃で後攻チーム（p2側 = score2）がリードした瞬間）
-                if (data.topBot === '裏' && s2 > s1) {
+                // サヨナラ判定（裏の攻撃で、後攻(s2)が先攻(s1)を上回った場合のみ）
+                if (!isTop && s2 > s1) {
                     resultMsg += ' 🏆 試合終了！後攻チームのサヨナラ勝ち！';
                     update(ref(db, 'rooms/' + roomId), {
                         batZone: bZone,
@@ -238,12 +241,11 @@
 
                 // 通常のイニング進行
                 let nextInning = data.inning;
-                let nextTopBot = (data.topBot === '表') ? '裏' : '表';
+                let nextTopBot = isTop ? '裏' : '表';
                 if (nextTopBot === '表') {
                     nextInning += 1;
                 }
 
-                // 9回裏以降で、9回裏が終わった時点で同点の場合は延長戦へ（そのまま進む）
                 update(ref(db, 'rooms/' + roomId), {
                     batZone: bZone,
                     batterReady: true,
